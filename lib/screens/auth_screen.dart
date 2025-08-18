@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'reset_password_screen.dart';
+import '../utilities/deep_link_handler.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -13,6 +16,10 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late DeepLinkHandler _deepLinkHandler;
+
+  final _loginFormKey = GlobalKey<FormState>();
+  final _registerFormKey = GlobalKey<FormState>();
 
   final _loginEmailController = TextEditingController();
   final _loginPasswordController = TextEditingController();
@@ -21,15 +28,28 @@ class _AuthScreenState extends State<AuthScreen>
   final _registerPasswordController = TextEditingController();
   final _forgotEmailController = TextEditingController();
 
-  final String strapiUrl = "http://10.0.2.2:1337"; // Change to your backend IP
+  final String strapiUrl = "https://kind-bird-79c9416840.strapiapp.com"; // update to backend IP
+
   bool _isLoggedIn = false;
   String? _username;
+  bool _isLoading = false;
 
   @override
   void initState() {
+    super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _checkLoginStatus();
-    super.initState();
+
+    @override
+    void initState() {
+      super.initState();
+      _tabController = TabController(length: 2, vsync: this);
+      _checkLoginStatus();
+
+      _deepLinkHandler = DeepLinkHandler(context);
+      _deepLinkHandler.init();
+    }
+
   }
 
   Future<void> _checkLoginStatus() async {
@@ -67,69 +87,132 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> login() async {
-    final response = await http.post(
-      Uri.parse("$strapiUrl/api/auth/local"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "identifier": _loginEmailController.text,
-        "password": _loginPasswordController.text,
-      }),
-    );
+    if (!_loginFormKey.currentState!.validate()) return;
 
-    if (response.statusCode == 200) {
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse("$strapiUrl/api/auth/local"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "identifier": _loginEmailController.text,
+          "password": _loginPasswordController.text,
+        }),
+      );
+
       final data = jsonDecode(response.body);
-      await _saveSession(data["jwt"], data["user"]["username"]);
+
+      if (response.statusCode == 200) {
+        await _saveSession(data["jwt"], data["user"]["username"]);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Welcome ${data['user']['username']}")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["error"]["message"] ?? "Login failed")),
+        );
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Welcome ${data['user']['username']}")),
+        SnackBar(content: Text("Network error: $e")),
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Login failed")),
-      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> register() async {
-    final response = await http.post(
-      Uri.parse("$strapiUrl/api/auth/local/register"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "username": _registerUsernameController.text,
-        "email": _registerEmailController.text,
-        "password": _registerPasswordController.text,
-      }),
-    );
+    if (!_registerFormKey.currentState!.validate()) return;
 
-    if (response.statusCode == 200) {
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse("$strapiUrl/api/auth/local/register"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "username": _registerUsernameController.text,
+          "email": _registerEmailController.text,
+          "password": _registerPasswordController.text,
+        }),
+      );
+
       final data = jsonDecode(response.body);
-      await _saveSession(data["jwt"], data["user"]["username"]);
+
+      if (response.statusCode == 200) {
+        await _saveSession(data["jwt"], data["user"]["username"]);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Registered & logged in successfully")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["error"]["message"] ?? "Registration failed")),
+        );
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Registered & logged in successfully")),
+        SnackBar(content: Text("Network error: $e")),
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Registration failed")),
-      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> forgotPassword() async {
-    final response = await http.post(
-      Uri.parse("$strapiUrl/api/auth/forgot-password"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"email": _forgotEmailController.text}),
-    );
-
-    if (response.statusCode == 200) {
-      Navigator.pop(context);
+    if (_forgotEmailController.text.isEmpty ||
+        !_forgotEmailController.text.contains("@")) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Password reset email sent")),
+        const SnackBar(content: Text("Enter a valid email")),
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error sending reset email")),
-      );
+      return;
     }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse("$strapiUrl/api/auth/forgot-password"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": _forgotEmailController.text}),
+      );
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                "Password reset email sent! Click the link in your email to reset."),
+          ),
+        );
+        Navigator.pop(context); // Close dialog after confirmation
+      } else {
+        final errorData = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  errorData["error"]["message"] ?? "Error sending reset email")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Network error: $e")),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+
+  void _navigateToResetPassword(String code) {
+    // Close the forgot password dialog if open
+    if (Navigator.canPop(context)) Navigator.pop(context);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResetPasswordScreen(code: code),
+      ),
+    );
   }
 
   void _showForgotPasswordDialog() {
@@ -139,7 +222,11 @@ class _AuthScreenState extends State<AuthScreen>
         title: const Text("Forgot Password"),
         content: TextField(
           controller: _forgotEmailController,
-          decoration: const InputDecoration(hintText: "Enter your email"),
+          decoration: const InputDecoration(
+            hintText: "Enter your email",
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.emailAddress,
         ),
         actions: [
           TextButton(
@@ -147,7 +234,7 @@ class _AuthScreenState extends State<AuthScreen>
             child: const Text("Cancel"),
           ),
           ElevatedButton(
-            onPressed: forgotPassword,
+            onPressed: () => _handleForgotPassword(),
             child: const Text("Send"),
           ),
         ],
@@ -155,10 +242,61 @@ class _AuthScreenState extends State<AuthScreen>
     );
   }
 
+  Future<void> _handleForgotPassword() async {
+    final email = _forgotEmailController.text.trim();
+
+    if (email.isEmpty || !email.contains("@")) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Enter a valid email")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse("$strapiUrl/api/auth/forgot-password"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": email}),
+      );
+
+      if (response.statusCode == 200) {
+        // Notify user to check email
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                "Password reset email sent! Click the link in your email to reset."),
+            duration: Duration(seconds: 4),
+          ),
+        );
+
+        // Close dialog automatically after confirmation
+        Navigator.pop(context);
+      } else {
+        final errorData = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errorData["error"]["message"] ?? "Error sending reset email",
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Network error: $e")),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     if (_isLoggedIn) {
-      // ✅ Show logged-in screen
+      // ✅ Dashboard after login
       return Scaffold(
         appBar: AppBar(title: const Text("Dashboard")),
         body: Center(
@@ -178,7 +316,7 @@ class _AuthScreenState extends State<AuthScreen>
       );
     }
 
-    // ✅ Show Auth screen
+    // ✅ Auth screen
     return Scaffold(
       appBar: AppBar(
         title: const Text("Auth"),
@@ -190,60 +328,90 @@ class _AuthScreenState extends State<AuthScreen>
           ],
         ),
       ),
-      body: TabBarView(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
         controller: _tabController,
         children: [
           // Sign In Tab
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _loginEmailController,
-                  decoration: const InputDecoration(labelText: "Email"),
-                ),
-                TextField(
-                  controller: _loginPasswordController,
-                  decoration: const InputDecoration(labelText: "Password"),
-                  obscureText: true,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: login,
-                  child: const Text("Sign In"),
-                ),
-                TextButton(
-                  onPressed: _showForgotPasswordDialog,
-                  child: const Text("Forgot Password?"),
-                ),
-              ],
+            child: Form(
+              key: _loginFormKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _loginEmailController,
+                    decoration: const InputDecoration(labelText: "Email"),
+                    validator: (value) => value != null &&
+                        value.contains("@")
+                        ? null
+                        : "Enter a valid email",
+                  ),
+                  TextFormField(
+                    controller: _loginPasswordController,
+                    decoration:
+                    const InputDecoration(labelText: "Password"),
+                    obscureText: true,
+                    validator: (value) =>
+                    value != null && value.length >= 6
+                        ? null
+                        : "Password must be at least 6 chars",
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: login,
+                    child: const Text("Sign In"),
+                  ),
+                  TextButton(
+                    onPressed: _showForgotPasswordDialog,
+                    child: const Text("Forgot Password?"),
+                  ),
+                ],
+              ),
             ),
           ),
 
           // Register Tab
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _registerUsernameController,
-                  decoration: const InputDecoration(labelText: "Username"),
-                ),
-                TextField(
-                  controller: _registerEmailController,
-                  decoration: const InputDecoration(labelText: "Email"),
-                ),
-                TextField(
-                  controller: _registerPasswordController,
-                  decoration: const InputDecoration(labelText: "Password"),
-                  obscureText: true,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: register,
-                  child: const Text("Register"),
-                ),
-              ],
+            child: Form(
+              key: _registerFormKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _registerUsernameController,
+                    decoration:
+                    const InputDecoration(labelText: "Username"),
+                    validator: (value) => value != null && value.isNotEmpty
+                        ? null
+                        : "Username required",
+                  ),
+                  TextFormField(
+                    controller: _registerEmailController,
+                    decoration: const InputDecoration(labelText: "Email"),
+                    validator: (value) => value != null &&
+                        value.contains("@")
+                        ? null
+                        : "Enter a valid email",
+                  ),
+                  TextFormField(
+                    controller: _registerPasswordController,
+                    decoration:
+                    const InputDecoration(labelText: "Password"),
+                    obscureText: true,
+                    validator: (value) =>
+                    value != null && value.length >= 6
+                        ? null
+                        : "Password must be at least 6 chars",
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: register,
+                    child: const Text("Register"),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -251,3 +419,4 @@ class _AuthScreenState extends State<AuthScreen>
     );
   }
 }
+
