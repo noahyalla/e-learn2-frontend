@@ -9,8 +9,6 @@ import './providers/user_provider.dart';
 
 // Screens
 import './screens/home_screen.dart';
-//import './screens/course_screen.dart';
-
 
 void main() {
   runApp(MyApp());
@@ -38,12 +36,7 @@ class MyApp extends StatelessWidget {
             displayColor: Colors.white,
           ),
         ),
-        initialRoute: '/',
-        routes: {
-          '/': (ctx) => const HomePage(),
-          //'/course-detail': (ctx) => CourseDetailScreen(),
-          //'/lesson-list': (ctx) => LessonListScreen(),
-        },
+        home: HomePage(),
       ),
     );
   }

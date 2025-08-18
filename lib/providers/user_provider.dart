@@ -1,4 +1,3 @@
-// lib/providers/user_provider.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -8,10 +7,12 @@ class UserProvider with ChangeNotifier {
   String? _jwtToken;
   Map<String, dynamic>? _userData;
 
+  bool _isLoading = true;
+
   String? get jwtToken => _jwtToken;
   Map<String, dynamic>? get userData => _userData;
-
   bool get isAuthenticated => _jwtToken != null;
+  bool get isLoading => _isLoading;
 
   UserProvider() {
     _loadUserFromStorage();
@@ -25,20 +26,17 @@ class UserProvider with ChangeNotifier {
     if (token != null && userJson != null) {
       _jwtToken = token;
       _userData = json.decode(userJson);
-      notifyListeners();
     }
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> login(String email, String password) async {
-    // This is a placeholder. Replace with your actual Strapi API endpoint.
     const url = 'https://kind-bird-79c9416840.strapiapp.com/api/auth/local';
     final response = await http.post(
       Uri.parse(url),
       headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'identifier': email,
-        'password': password,
-      }),
+      body: json.encode({'identifier': email, 'password': password}),
     );
 
     if (response.statusCode == 200) {
@@ -52,7 +50,6 @@ class UserProvider with ChangeNotifier {
 
       notifyListeners();
     } else {
-      // Handle login error
       throw Exception('Failed to log in: ${response.body}');
     }
   }

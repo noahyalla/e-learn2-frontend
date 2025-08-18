@@ -19,4 +19,14 @@ class CourseImage {
       url: json['url'],
     );
   }
+
+  // ✅ Add this method
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'documentId': documentId,
+      'name': name,
+      'url': url,
+    };
+  }
 }
